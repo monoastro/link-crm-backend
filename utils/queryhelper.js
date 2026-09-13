@@ -1,6 +1,6 @@
 import { sql, ilike, or, and } from "drizzle-orm";
 import { eq, getTableColumns } from "drizzle-orm";
-import { db } from "../../config/db.js";
+import { db } from "#/config/db.js";
 
 const JOIN_METHODS = {
   inner: "innerJoin",
@@ -10,9 +10,9 @@ const JOIN_METHODS = {
 };
 
 // Builds a base data/count query pair from a single table
-export function fromTable(table) {
+export function fromTable(table, fields) {
   return {
-    dataQuery: db.select().from(table),
+    dataQuery: fields ? db.select(fields).from(table) : db.select().from(table),
     countQuery: db.select({ count: sql`count(*)::int` }).from(table),
   };
 }
@@ -52,10 +52,11 @@ export async function paginateAndSearch(
     orderBy,
     page = 1,
     pageSize = 20,
+    fields, // column selection — only used when source is a raw Table
   } = {},
 ) {
   const { dataQuery: baseData, countQuery: baseCount } =
-    source && source.dataQuery ? source : fromTable(source);
+    source && source.dataQuery ? source : fromTable(source, fields);
 
   const searchCondition =
     query.trim() !== "" && searchFields.length > 0
