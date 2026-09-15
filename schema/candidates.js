@@ -6,7 +6,7 @@ import { pkid, timestamps } from "./helpers.js";
 
 export const genderEnum = t.pgEnum("gender", ["male", "female", "other"]);
 
-export const candidate = t.pgTable(
+export const candidates = t.pgTable(
   "candidates",
   {
     ...pkid,

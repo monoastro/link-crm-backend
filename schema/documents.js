@@ -30,7 +30,7 @@ export const documents = t.pgTable(
 
     candidateId: t.uuid("candidate_id")
       .notNull()
-      .references(() => candidate.id, { onDelete: "cascade" }),
+      .references(() => candidates.id, { onDelete: "cascade" }),
 
     type: documentTypeEnum("type").notNull(),
     fileType: fileTypeEnum("file_type").notNull(),

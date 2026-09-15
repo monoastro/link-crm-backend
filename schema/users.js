@@ -12,7 +12,7 @@ import {
 
 import { pkid, timestamps } from "./helpers.js";
 
-export const userRole = pgEnum("user_role", ["admin", "editor"]);
+export const userRole = pgEnum("user_role", ["admin", "frontdesk", 'flight', 'visa', 'medical']);
 
 export const users = pgTable(
     "users",
