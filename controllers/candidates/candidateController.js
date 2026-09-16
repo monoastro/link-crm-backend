@@ -1,3 +1,4 @@
+// src/modules/candidates/candidateController.js
 import { StatusCodes } from "http-status-codes";
 import HttpError from "#/middlewares/errors/HttpError.js";
 import {
@@ -6,16 +7,40 @@ import {
   deleteCandidate,
   findAllCandidates,
   updateCandidate,
+  upsertCandidateDocuments,
 } from "./candidateQueries.js";
 import { createCandidateSchema, updateCandidateSchema } from "./candidateValidator.js";
 import { comparator } from "#/utils/patcher.js";
 import { emptyObject } from "#/utils/objectutils.js";
 import { parseBody } from "#/utils/parse.js";
+import { ALLOWED_DOCUMENT_FIELDS } from "#/middlewares/file_upload/upload.js";
+
+function buildDocumentsFromFiles(files) {
+  if (!files) return [];
+
+  const docs = [];
+
+  for (const type of ALLOWED_DOCUMENT_FIELDS) {
+    const file = files[type]?.[0];
+    if (!file) continue;
+
+    const fileType = file.mimetype === "application/pdf" ? "pdf" : "image";
+    const url = `/uploads/documents/${type}/${file.filename}`;
+
+    docs.push({ type, fileType, url });
+  }
+
+  return docs;
+}
+
+//===================================================================
 
 export async function createCandidateController(req, res) {
   const data = parseBody(createCandidateSchema, req.body);
 
-  const candidate = await createCandidate(data);
+  const documents = buildDocumentsFromFiles(req.files);
+
+  const candidate = await createCandidate({ ...data, documents });
 
   res.status(StatusCodes.CREATED).json({
     success: true,
@@ -29,8 +54,9 @@ export async function createCandidateController(req, res) {
 export async function updateCandidateController(req, res) {
   const { id } = req.params;
   const data = parseBody(updateCandidateSchema, req.body);
+  const newDocuments = buildDocumentsFromFiles(req.files);
 
-  if (emptyObject(data)) {
+  if (emptyObject(data) && !newDocuments.length) {
     throw new HttpError("No valid fields to update", StatusCodes.BAD_REQUEST);
   }
 
@@ -41,9 +67,17 @@ export async function updateCandidateController(req, res) {
 
   const changes = comparator(existingCandidate, data);
 
-  const updatedCandidate = emptyObject(changes)
-    ? existingCandidate
-    : await updateCandidate(id, changes);
+  if (!emptyObject(changes)) {
+    await updateCandidate(id, changes);
+  }
+
+  if (newDocuments.length) {
+    await upsertCandidateDocuments(id, newDocuments);
+  }
+
+  // Re-fetch so the response always reflects the true current state —
+  // both the candidate columns and the full, merged documents list.
+  const updatedCandidate = await findCandidateById(id);
 
   res.status(StatusCodes.OK).json({
     success: true,

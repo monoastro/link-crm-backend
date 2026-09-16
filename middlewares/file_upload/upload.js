@@ -1,26 +1,36 @@
+// src/middlewares/upload/candidateDocumentsUpload.js
 import multer from 'multer'
-
 import path from 'path'
-
 import fs from 'fs'
-
 import { v4 as uuidv4 } from 'uuid'
-
 import HttpError from '../errors/HttpError.js'
-
 import { StatusCodes } from 'http-status-codes'
 
+/*
+|--------------------------------------------------------------------------
+| Allowed Document Types
+|--------------------------------------------------------------------------
+|
+| Must match the documentTypeEnum values in the schema.
+| Each value here is both:
+|   - the exact field name the frontend uploads under
+|     e.g. <input type="file" name="visa" />  ->  req.files.visa
+|   - the subfolder name the file gets saved into
+|     e.g. src/public/uploads/documents/visa/<uuid>.pdf
+|
+*/
 
-const uploadFolders = {
-
-
-    thumbnail:
-        'thumbnails',
-
-    media:
-        'media',
-
-}
+const ALLOWED_DOCUMENT_FIELDS = [
+    'passport',
+    'visa',
+    'citizenship',
+    'medical',
+    'offer_letter',
+    'ticket',
+    'photo',
+    'cv',
+    'other',
+]
 
 
 
@@ -28,9 +38,6 @@ const uploadFolders = {
 |--------------------------------------------------------------------------
 | Ensure Upload Directory Exists
 |--------------------------------------------------------------------------
-|
-| Automatically creates folders if missing.
-|
 */
 
 const ensureUploadPath = (
@@ -42,6 +49,7 @@ const ensureUploadPath = (
         'src',
         'public',
         'uploads',
+        'documents',
         folder
     )
 
@@ -77,7 +85,11 @@ const storage = multer.diskStorage({
     | Destination Resolver
     |--------------------------------------------------------------------------
     |
-    | Dynamically determines upload folder based on field name.
+    | Each document type gets its own subfolder, named after the field:
+    |   documents/visa/
+    |   documents/passport/
+    |   documents/citizenship/
+    |   ...
     |
     */
 
@@ -87,28 +99,15 @@ const storage = multer.diskStorage({
         cb
     ) => {
 
-        const folder =
-            uploadFolders[
-            file.fieldname
-            ]
-
-        console.log(folder)
-
-        /*
-        |--------------------------------------------------------------------------
-        | Reject Unknown Upload Fields
-        |--------------------------------------------------------------------------
-        |
-        | Prevents accidental uploads
-        | to undefined destinations.
-        |
-        */
-
-        if (!folder) {
+        if (
+            !ALLOWED_DOCUMENT_FIELDS.includes(
+                file.fieldname
+            )
+        ) {
 
             return cb(
                 new HttpError(
-                    `Invalid upload field: ${file.fieldname}`,
+                    `Invalid document field: ${file.fieldname}`,
                     StatusCodes.BAD_REQUEST
                 )
             )
@@ -116,7 +115,7 @@ const storage = multer.diskStorage({
 
         cb(
             null,
-            ensureUploadPath(folder)
+            ensureUploadPath(file.fieldname)
         )
     },
 
@@ -127,10 +126,13 @@ const storage = multer.diskStorage({
     | File Naming Strategy
     |--------------------------------------------------------------------------
     |
-    | Uses UUID to avoid collisions.
+    | <uuid>.<ext>
+    |
+    | Folder already tells us the type, so the filename itself
+    | doesn't need the fieldname prefix anymore.
     |
     | Example:
-    |   8d3d8f3f-....png
+    |   documents/visa/8d3d8f3f-....pdf
     |
     */
 
@@ -144,18 +146,6 @@ const storage = multer.diskStorage({
             path.extname(
                 file.originalname
             )
-
-        // Use thumbnail_title for article thumbnails if provided
-        if (file.fieldname === 'thumbnail' && req.body?.thumbnail_title) {
-            const safeName = req.body.thumbnail_title
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-+|-+$/g, '')
-                .slice(0, 80)
-
-            const uniqueName = `${safeName}-${uuidv4().slice(0, 8)}${extension}`
-            return cb(null, uniqueName)
-        }
 
         const uniqueName =
             `${uuidv4()}${extension}`
@@ -174,14 +164,15 @@ const storage = multer.diskStorage({
 | Allowed File Types
 |--------------------------------------------------------------------------
 |
-| Restricts uploads to image formats only.
+| Candidate documents support images and PDFs only.
 |
 */
 
 const allowedMimeTypes = [
     'image/jpeg',
     'image/png',
-    'image/webp'
+    'image/webp',
+    'application/pdf',
 ]
 
 
@@ -206,7 +197,7 @@ const fileFilter = (
 
         return cb(
             new HttpError(
-                'Only jpg, png and webp images are allowed',
+                'Only jpg, png, webp images and PDF files are allowed',
                 StatusCodes.BAD_REQUEST
             )
         )
@@ -222,36 +213,39 @@ const fileFilter = (
 | Multer Upload Middleware
 |--------------------------------------------------------------------------
 |
-| Supports:
-|   upload.single()
-|   upload.array()
-|   upload.fields()
+| One optional file per document type field, e.g.:
+|   uploadCandidateDocuments.fields([
+|     { name: 'passport', maxCount: 1 },
+|     { name: 'visa', maxCount: 1 },
+|     ...
+|   ])
+|
+| maxCount: 1 per field enforces "no two visas in a single request"
+| at the multer level, in addition to the DB unique constraint.
 |
 */
 
-const upload = multer({
+const uploadCandidateDocuments = multer({
 
     storage,
 
     fileFilter,
 
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Upload Limits
-    |--------------------------------------------------------------------------
-    */
-
     limits: {
 
-        // 5 MB
-
+        // 10 MB — PDFs tend to be larger than images
         fileSize:
-            5 * 1024 * 1024
+            10 * 1024 * 1024
     }
-})
+
+}).fields(
+    ALLOWED_DOCUMENT_FIELDS.map((field) => ({
+        name: field,
+        maxCount: 1,
+    }))
+)
 
 
 
-export default upload
+export default uploadCandidateDocuments
+export { ALLOWED_DOCUMENT_FIELDS }

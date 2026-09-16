@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import { authenticateUser, authorizePermissions } from "#/middlewares/authentication/auth.js";
+import uploadCandidateDocuments from "#/middlewares/file_upload/upload.js";
 import {
   createCandidateController,
   updateCandidateController,
@@ -12,13 +13,13 @@ import {
 const router = Router();
 
 router.route("/")
-  .post(authenticateUser , createCandidateController)
-  .get(authenticateUser,  getAllCandidatesController);
+  .post(authenticateUser, uploadCandidateDocuments, createCandidateController)
+  .get(authenticateUser, getAllCandidatesController);
 
 router.route("/:id")
   .all(authenticateUser)
   .get(getSingleCandidateController)
-  .patch(updateCandidateController)
+  .patch(uploadCandidateDocuments, updateCandidateController)
   .delete(deleteCandidateController);
 
 export default router;
