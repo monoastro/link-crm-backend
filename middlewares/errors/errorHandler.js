@@ -53,7 +53,6 @@ const errorHandler = (err, req, res, next) => {
         });
     }
   }
-  console.log('reached here', err.statusCode, err.message)
 
   return res.status(err.statusCode || 500).json({
     success: false,

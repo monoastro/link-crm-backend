@@ -46,7 +46,6 @@ const ensureUploadPath = (
 
     const uploadPath = path.join(
         process.cwd(),
-        'src',
         'public',
         'uploads',
         'documents',

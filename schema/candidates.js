@@ -15,7 +15,7 @@ export const candidates = t.pgTable(
     name: t.varchar("name", { length: 255 }).notNull(),
     email: t.varchar("email", { length: 255 }),
     phone: t.varchar("phone", { length: 20 }),
-    passport: t.varchar("passport", { length: 20 }).unique().notNull(),
+    passportNumber: t.varchar("passport", { length: 20 }).unique().notNull(),
     address: t.varchar("address", { length: 255 }),
     dob: t.timestamp("dob"),
     gender: genderEnum("gender"),
