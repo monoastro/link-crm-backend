@@ -137,7 +137,7 @@ export async function findAllCandidates(queryParams = {}) {
 
   return paginateAndSearch(candidates, {
     query,
-    searchFields: [candidates.name, candidates.passport],
+    searchFields: [candidates.name, candidates.passportNumber],
     where,
     orderBy: candidates.createdAt,
     page,
