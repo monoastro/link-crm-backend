@@ -1,10 +1,11 @@
 // src/modules/candidates/candidateQueries.js
-import { and, eq } from "drizzle-orm";
+import { ne, and, eq, notInArray } from "drizzle-orm";
 import path from "path";
 import fs from "fs/promises";
 import { db } from "#/config/db.js";
-import { candidates, documents } from "#/schema/index.js";
+import { candidates, documents, notifications } from "#/schema/index.js";
 import { paginateAndSearch, buildWhereFromQuery } from "#/utils/queryhelper.js";
+import { STATUS_FIELD_RULES, STATUS_COLUMNS } from "./candidateStatusRules.js";
 
 export async function findCandidateById(id) {
   return db.query.candidates.findFirst({
@@ -38,13 +39,13 @@ export async function createCandidate(data) {
 }
 
 // ---------------------------------------------------------------------------
-// Converts a stored document url (e.g. "/uploads/documents/visa/uuid.pdf")
+// Converts a stored document url (e.g. "/uploads/documents/other/uuid.pdf")
 // back into its absolute path on disk, so the old file can be removed
-// when it's replaced by a new upload.
+// when it's replaced or dropped.
 // ---------------------------------------------------------------------------
 
 function urlToDiskPath(url) {
-  // url looks like "/uploads/documents/visa/uuid.pdf"
+  // url looks like "/uploads/documents/other/uuid.pdf"
   // disk root is "<cwd>/src/public"
   return path.join(process.cwd(), "src", "public", url);
 }
@@ -62,11 +63,9 @@ async function deleteFileIfExists(filePath) {
 }
 
 // ---------------------------------------------------------------------------
-// Upserts documents by (candidateId, type):
-//   - if a document of that type already exists for this candidate, replace
-//     its url/fileType and delete the old file from disk
-//   - otherwise insert a new row
-// Relies on the unique_candidate_document constraint on (candidate_id, type).
+// Upserts documents by (candidateId, type) for single-instance types
+// (e.g. "photo"). One row per type per candidate — replaces the file/url
+// if a row already exists.
 // ---------------------------------------------------------------------------
 
 export async function upsertCandidateDocuments(candidateId, docs) {
@@ -94,8 +93,6 @@ export async function upsertCandidateDocuments(candidateId, docs) {
           .where(eq(documents.id, existing.id))
           .returning();
 
-        // Only queue the old file for deletion once the DB write succeeds,
-        // and only if the url actually changed.
         if (existing.url && existing.url !== doc.url) {
           oldFilesToDelete.push(existing.url);
         }
@@ -113,11 +110,56 @@ export async function upsertCandidateDocuments(candidateId, docs) {
     return upserted;
   });
 
-  // File cleanup happens after the transaction commits, so a failed
-  // transaction never leaves us having deleted a file we still need.
   await Promise.all(
     oldFilesToDelete.map((url) => deleteFileIfExists(urlToDiskPath(url)))
   );
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Syncs "other" documents, which can have many rows per candidate:
+//   - keepUrls: urls of existing "other" documents the user chose to keep
+//     (whatever wasn't in this list gets deleted, DB row + file on disk)
+//   - newDocs: freshly uploaded files to insert as new "other" rows
+// Used instead of upsertCandidateDocuments for the multi-file "other" type.
+// ---------------------------------------------------------------------------
+
+export async function syncOtherDocuments(candidateId, keepUrls = [], newDocs = []) {
+  const existing = await db
+    .select({ id: documents.id, url: documents.url })
+    .from(documents)
+    .where(and(eq(documents.candidateId, candidateId), eq(documents.type, "other")));
+
+  const toDelete = existing.filter((doc) => !keepUrls.includes(doc.url));
+
+  const results = await db.transaction(async (tx) => {
+    if (toDelete.length) {
+      await tx.delete(documents).where(
+        and(
+          eq(documents.candidateId, candidateId),
+          ne(documents.type, "photo"),
+          notInArray(
+            documents.id,
+            existing.filter((doc) => keepUrls.includes(doc.url)).map((doc) => doc.id)
+          )
+        )
+      );
+    }
+
+    let inserted = [];
+    if (newDocs.length) {
+      inserted = await tx
+        .insert(documents)
+        .values(newDocs.map((d) => ({ ...d, candidateId })))
+        .returning();
+    }
+
+    return inserted;
+  });
+
+  // File cleanup happens after the transaction commits.
+  await Promise.all(toDelete.map((doc) => deleteFileIfExists(urlToDiskPath(doc.url))));
 
   return results;
 }
@@ -146,10 +188,43 @@ export async function findAllCandidates(queryParams = {}) {
 }
 
 export async function updateCandidate(id, data) {
-  const [candidate] = await db
-    .update(candidates)
-    .set({ ...data, updatedAt: new Date() })
-    .where(eq(candidates.id, id))
-    .returning();
-  return candidate;
+  return db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({
+        name: candidates.name,
+        ...Object.fromEntries(STATUS_COLUMNS.map((col) => [col, candidates[col]])),
+      })
+      .from(candidates)
+      .where(eq(candidates.id, id))
+      .for("update");
+
+    if (!before) return null;
+
+    const [candidate] = await tx
+      .update(candidates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(candidates.id, id))
+      .returning();
+
+    const changedStatusFields = STATUS_COLUMNS.filter(
+      (col) => col in data && data[col] !== before[col]
+    );
+
+    for (const field of changedStatusFields) {
+      const rule = STATUS_FIELD_RULES[field];
+      const from = before[field];
+      const to = candidate[field];
+
+      for (const role of rule.roles) {
+        await tx.insert(notifications).values({
+          role,
+          type: `candidate.${field}_changed`,
+          title: `${before.name}: ${rule.label} changed from ${from ?? "—"} to ${to ?? "—"}`,
+          data: { candidateName: before.name, candidateId: id, field, from, to },
+        });
+      }
+    }
+
+    return candidate;
+  });
 }

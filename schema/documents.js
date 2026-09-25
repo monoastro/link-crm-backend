@@ -11,6 +11,7 @@ export const documentTypeEnum = t.pgEnum("document_type", [
   "driving_license",
   "citizenship",
   "residence_permit",
+  "other",
   "land_ownership_certificate",
   "photo",
   "national_id",
@@ -36,7 +37,4 @@ export const documents = t.pgTable(
     fileType: fileTypeEnum("file_type").notNull(),
     url: t.text("url").notNull(),
   },
-  (table) => ({
-    uniqueCandidateDocument: t.unique("unique_candidate_document").on(table.candidateId, table.type),
-  }),
 );

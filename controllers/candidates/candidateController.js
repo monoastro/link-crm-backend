@@ -7,38 +7,50 @@ import {
   deleteCandidate,
   findAllCandidates,
   updateCandidate,
-  upsertCandidateDocuments,
+  syncOtherDocuments,
 } from "./candidateQueries.js";
 import { createCandidateSchema, updateCandidateSchema } from "./candidateValidator.js";
 import { comparator } from "#/utils/patcher.js";
 import { emptyObject } from "#/utils/objectutils.js";
 import { parseBody } from "#/utils/parse.js";
-import { ALLOWED_DOCUMENT_FIELDS } from "#/middlewares/file_upload/upload.js";
 
-function buildDocumentsFromFiles(files) {
-  if (!files) return [];
+const ROLES_THAT_OWN_DOCUMENTS = ["admin", "frontdesk"];
 
-  const docs = [];
+function canEditDocuments(role) {
+  return ROLES_THAT_OWN_DOCUMENTS.includes(role);
+}
 
-  for (const type of ALLOWED_DOCUMENT_FIELDS) {
-    const file = files[type]?.[0];
-    if (!file) continue;
+function buildOtherDocumentsFromFiles(files) {
+  const rawFiles = normalizeToArray(files?.other);
+  const photoFile = normalizeToArray(files?.photo)
 
-    const fileType = file.mimetype === "application/pdf" ? "pdf" : "image";
-    const url = `/uploads/documents/${type}/${file.filename}`;
+  const otherFiles = rawFiles.map((file) => ({
+    type: "other",
+    fileType: file.mimetype === "application/pdf" ? "pdf" : "image",
+    url: `/uploads/documents/other/${file.filename}`,
+  }));
 
-    docs.push({ type, fileType, url });
-  }
+  const photoFiles = photoFile.map((file) => ({
+    type: "photo",
+    fileType: file.mimetype === "application/pdf" ? "pdf" : "image",
+    url: `/uploads/documents/photo/${file.filename}`,
+  }));
 
-  return docs;
+  const allFiles = [...otherFiles, ...photoFiles];
+
+  return allFiles;
+}
+
+function normalizeToArray(value) {
+  if (value === undefined || value === null || value === "") return [];
+  return Array.isArray(value) ? value : [value];
 }
 
 //===================================================================
 
 export async function createCandidateController(req, res) {
   const data = parseBody(createCandidateSchema, req.body);
-
-  const documents = buildDocumentsFromFiles(req.files);
+  const documents = buildOtherDocumentsFromFiles(req.files);
 
   const candidate = await createCandidate({ ...data, documents });
 
@@ -54,9 +66,9 @@ export async function createCandidateController(req, res) {
 export async function updateCandidateController(req, res) {
   const { id } = req.params;
   const data = parseBody(updateCandidateSchema, req.body);
-  const newDocuments = buildDocumentsFromFiles(req.files);
+  const canTouchDocuments = canEditDocuments(req.user?.role);
 
-  if (emptyObject(data) && !newDocuments.length) {
+  if (emptyObject(data) && !canTouchDocuments) {
     throw new HttpError("No valid fields to update", StatusCodes.BAD_REQUEST);
   }
 
@@ -66,17 +78,16 @@ export async function updateCandidateController(req, res) {
   }
 
   const changes = comparator(existingCandidate, data);
-
   if (!emptyObject(changes)) {
     await updateCandidate(id, changes);
   }
 
-  if (newDocuments.length) {
-    await upsertCandidateDocuments(id, newDocuments);
+  if (canTouchDocuments) {
+    const newDocuments = buildOtherDocumentsFromFiles(req.files);
+    const keepUrls = normalizeToArray(req.body.other_existing);
+    await syncOtherDocuments(id, keepUrls, newDocuments);
   }
 
-  // Re-fetch so the response always reflects the true current state —
-  // both the candidate columns and the full, merged documents list.
   const updatedCandidate = await findCandidateById(id);
 
   res.status(StatusCodes.OK).json({
@@ -91,6 +102,7 @@ export async function updateCandidateController(req, res) {
 export async function getAllCandidatesController(req, res) {
   const { query, page, pageSize, appliedCountry } = req.query;
   const result = await findAllCandidates({ query, page, pageSize, appliedCountry });
+
   res.status(StatusCodes.OK).json({
     success: true,
     message: "Candidates fetched successfully",
@@ -103,9 +115,11 @@ export async function getAllCandidatesController(req, res) {
 export async function getSingleCandidateController(req, res) {
   const { id } = req.params;
   const candidate = await findCandidateById(id);
+
   if (!candidate) {
     throw new HttpError("Candidate not found", StatusCodes.NOT_FOUND);
   }
+
   res.status(StatusCodes.OK).json({
     success: true,
     message: "Candidate fetched successfully",
@@ -118,10 +132,13 @@ export async function getSingleCandidateController(req, res) {
 export async function deleteCandidateController(req, res) {
   const { id } = req.params;
   const existingCandidate = await findCandidateById(id);
+
   if (!existingCandidate) {
     throw new HttpError("Candidate not found", StatusCodes.NOT_FOUND);
   }
+
   await deleteCandidate(id);
+
   res.status(StatusCodes.OK).json({
     success: true,
     message: "Candidate deleted successfully",
