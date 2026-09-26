@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import * as t from "drizzle-orm/pg-core";
 
 import { companies } from "./companies.js";
+import { vacancies } from "./vacancies.js";
 import { pkid, timestamps } from "./helpers.js";
 
 export const genderEnum = t.pgEnum("gender", ["male", "female", "other"]);
@@ -20,7 +21,7 @@ export const candidates = t.pgTable(
     dob: t.date("dob"),
     gender: genderEnum("gender"),
 
-    appliedCategory: t.varchar("applied_category", { length: 255 }),
+    appliedCategory: t.uuid("applied_category").references(() => vacancies.id, { onDelete: "set null" }),
     passportExpiry: t.date("passport_expiry"),
     placeOfBirth: t.varchar("place_of_birth", { length: 255 }),
     docsForwardOrInterviewDate: t.timestamp("docs_forward_or_interview_date"),

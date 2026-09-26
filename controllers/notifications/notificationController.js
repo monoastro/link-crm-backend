@@ -21,8 +21,6 @@ export async function getNotificationsController(req, res) {
     }
   }
 
-  console.log(`Fetching notifications for role: ${role}, afterId: ${afterId}`);
-
   const items = await findNotificationsForRole(role, afterId);
   const lastId = items.length > 0 ? items[items.length - 1].id : afterId;
 

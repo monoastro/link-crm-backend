@@ -100,8 +100,7 @@ export async function updateCandidateController(req, res) {
 //===================================================================
 
 export async function getAllCandidatesController(req, res) {
-  const { query, page, pageSize, appliedCountry } = req.query;
-  const result = await findAllCandidates({ query, page, pageSize, appliedCountry });
+  const result = await findAllCandidates(req.query);
 
   res.status(StatusCodes.OK).json({
     success: true,

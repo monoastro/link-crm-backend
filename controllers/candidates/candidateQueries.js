@@ -1,10 +1,10 @@
 // src/modules/candidates/candidateQueries.js
-import { ne, and, eq, notInArray } from "drizzle-orm";
+import { sql, gte, lte, ne, and, eq, notInArray, getTableColumns } from "drizzle-orm";
 import path from "path";
 import fs from "fs/promises";
 import { db } from "#/config/db.js";
-import { candidates, documents, notifications } from "#/schema/index.js";
-import { paginateAndSearch, buildWhereFromQuery } from "#/utils/queryhelper.js";
+import { candidates, companies, vacancies, documents, notifications } from "#/schema/index.js";
+import { join, paginateAndSearch, buildWhereFromQuery } from "#/utils/queryhelper.js";
 import { STATUS_FIELD_RULES, STATUS_COLUMNS } from "./candidateStatusRules.js";
 
 export async function findCandidateById(id) {
@@ -172,19 +172,61 @@ export async function deleteCandidate(id) {
   return candidate;
 }
 
+function endOfDay(dateStr) {
+  const d = new Date(dateStr);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+
 export async function findAllCandidates(queryParams = {}) {
-  const { query, page, pageSize, appliedCountry } = queryParams;
+  const {
+    query, page, pageSize, appliedCountry, appliedCategory, companyId,
+    visaStatus, afterDate, beforeDate,
+  } = queryParams;
 
-  const where = buildWhereFromQuery(candidates, { appliedCountry }, ["appliedCountry"]);
+  const eqWhere = buildWhereFromQuery(
+    candidates,
+    { appliedCountry, appliedCategory, companyId, visaStatus },
+    ["appliedCountry", "appliedCategory", "companyId", "visaStatus"]
+  );
 
-  return paginateAndSearch(candidates, {
-    query,
-    searchFields: [candidates.name, candidates.passportNumber],
-    where,
-    orderBy: candidates.createdAt,
-    page,
-    pageSize,
-  });
+  const dateConditions = [
+    afterDate ? gte(candidates.createdAt, new Date(afterDate)) : undefined,
+    beforeDate ? lte(candidates.createdAt, endOfDay(beforeDate)) : undefined,
+  ].filter(Boolean);
+
+  const where = [eqWhere, ...dateConditions].filter(Boolean).length
+    ? and(...[eqWhere, ...dateConditions].filter(Boolean))
+    : undefined;
+
+  const dataQuery = db
+    .select({
+      ...getTableColumns(candidates),
+      appliedCategoryName: vacancies.position,
+      companyName: companies.name,
+    })
+    .from(candidates)
+    .leftJoin(vacancies, eq(candidates.appliedCategory, vacancies.id))
+    .leftJoin(companies, eq(candidates.companyId, companies.id));
+
+  const countQuery = db
+    .select({ count: sql`count(*)::int` })
+    .from(candidates)
+    .leftJoin(vacancies, eq(candidates.appliedCategory, vacancies.id))
+    .leftJoin(companies, eq(candidates.companyId, companies.id));
+
+  return paginateAndSearch(
+    { dataQuery, countQuery },
+    {
+      query,
+      searchFields: [candidates.name, candidates.passportNumber],
+      where,
+      orderBy: candidates.createdAt,
+      page,
+      pageSize,
+    }
+  );
 }
 
 export async function updateCandidate(id, data) {
