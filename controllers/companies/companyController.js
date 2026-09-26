@@ -58,11 +58,31 @@ export async function updateCompanyController(req, res) {
     }
   }
 
-  const changes = comparator(existingCompany, data);
+  // vacancies are diffed/persisted separately in updateCompany() — don't run them
+  // through the generic scalar-field comparator, which isn't array-diff-aware
+  const { vacancies: vacancyPayloads, ...companyFields } = data;
 
-  const updatedCompany = emptyObject(changes)
-    ? existingCompany
-    : await updateCompany(id, changes);
+  if (vacancyPayloads) {
+    const existingCodes = new Set(existingCompany.vacancies.map((v) => v.code));
+    const unknownCodes = vacancyPayloads
+      .filter((v) => v.code)
+      .filter((v) => !existingCodes.has(v.code));
+
+    if (unknownCodes.length) {
+      throw new HttpError(
+        `Unknown vacancy code(s) for this company: ${unknownCodes.map((v) => v.code).join(", ")}`,
+        StatusCodes.BAD_REQUEST
+      );
+    }
+  }
+
+  const changes = comparator(existingCompany, companyFields);
+
+  const hasChanges = !emptyObject(changes) || Boolean(vacancyPayloads);
+
+  const updatedCompany = hasChanges
+    ? await updateCompany(id, { ...changes, ...(vacancyPayloads ? { vacancies: vacancyPayloads } : {}) })
+    : existingCompany;
 
   res.status(StatusCodes.OK).json({
     success: true,

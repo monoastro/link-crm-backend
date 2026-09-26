@@ -4,4 +4,5 @@ export * from "./candidates.js";
 export * from "./documents.js";
 export * from "./relations.js";
 export * from "./notifications.js";
+export * from "./vacancies.js";
 
