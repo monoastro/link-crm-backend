@@ -10,6 +10,7 @@ export const companies = t.pgTable(
     ...timestamps,
 
     name: t.varchar("name", { length: 255 }).notNull(),
+    country: t.varchar("country", { length: 2 }).notNull(),
     parentCompanyId: t.uuid("parent_company_id").references(() => companies.id),
   }
 );

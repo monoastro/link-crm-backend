@@ -2,6 +2,7 @@ export function humanizeField(column) {
   return column
     .replace(/_id$/, "")
     .replace(/_/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
@@ -22,4 +23,3 @@ export function parseForeignKeyDetail(detail) {
   const [, column, value, table] = match;
   return { column, value, table };
 }
-
