@@ -17,7 +17,10 @@ function getInitials(str) {
  * - BE = position initials (from vacancy position)
  * - 001 = next sequence number for that company+position combo
  */
-export async function generateVacancyCode(tx, { companyId, companyName, position }) {
+export async function generateVacancyCode(
+  tx,
+  { companyId, companyName, position, reservedCodes = new Set() },
+) {
   const companyInitials = getInitials(companyName);
   const positionInitials = getInitials(position);
   const prefix = `${companyInitials}_${positionInitials}_`;
@@ -32,6 +35,13 @@ export async function generateVacancyCode(tx, { companyId, companyName, position
     return match ? Math.max(max, parseInt(match[1], 10)) : max;
   }, 0);
 
-  const nextSeq = String(maxSeq + 1).padStart(3, "0");
-  return `${prefix}${nextSeq}`;
+  let sequence = maxSeq + 1;
+  let code = `${prefix}${String(sequence).padStart(3, "0")}`;
+
+  while (reservedCodes.has(code)) {
+    sequence += 1;
+    code = `${prefix}${String(sequence).padStart(3, "0")}`;
+  }
+
+  return code;
 }

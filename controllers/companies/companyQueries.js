@@ -21,12 +21,15 @@ export async function createCompany(data) {
 
     if (vacancyPayloads?.length) {
       const withCodes = [];
+      const reservedCodes = new Set();
       for (const v of vacancyPayloads) {
         const code = await generateVacancyCode(tx, {
           companyId: company.id,
           companyName: company.name,
           position: v.position,
+          reservedCodes,
         });
+        reservedCodes.add(code);
         withCodes.push({ ...v, code, companyId: company.id });
       }
       await tx.insert(vacancies).values(withCodes);
@@ -91,12 +94,15 @@ export async function updateCompany(id, data) {
 
       if (newVacancies.length) {
         const withCodes = [];
+        const reservedCodes = new Set(existing.map((v) => v.code));
         for (const v of newVacancies) {
           const code = await generateVacancyCode(tx, {
             companyId: id,
             companyName: company.name,
             position: v.position,
+            reservedCodes,
           });
+          reservedCodes.add(code);
           withCodes.push({ ...v, code, companyId: id });
         }
         await tx.insert(vacancies).values(withCodes);
