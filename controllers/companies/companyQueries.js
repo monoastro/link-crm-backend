@@ -4,7 +4,10 @@ import { db } from "#/config/db.js";
 import { companies, vacancies } from "#/schema/index.js";
 import { paginateAndSearch } from "#/utils/queryhelper.js";
 import { diffIds } from "#/utils/diffid.js";
-import { generateVacancyCode } from "#/utils/vacancyCode.js";
+import {
+  generateVacancyCodes,
+  lockVacancyCodeGeneration,
+} from "#/utils/vacancyCode.js";
 
 export async function findCompanyById(id) {
   return db.query.companies.findFirst({
@@ -20,18 +23,10 @@ export async function createCompany(data) {
     const [company] = await tx.insert(companies).values(companyData).returning();
 
     if (vacancyPayloads?.length) {
-      const withCodes = [];
-      const reservedCodes = new Set();
-      for (const v of vacancyPayloads) {
-        const code = await generateVacancyCode(tx, {
-          companyId: company.id,
-          companyName: company.name,
-          position: v.position,
-          reservedCodes,
-        });
-        reservedCodes.add(code);
-        withCodes.push({ ...v, code, companyId: company.id });
-      }
+      const withCodes = generateVacancyCodes({
+        companyName: company.name,
+        vacancyPayloads,
+      }).map((vacancy) => ({ ...vacancy, companyId: company.id }));
       await tx.insert(vacancies).values(withCodes);
     }
 
@@ -43,6 +38,10 @@ export async function updateCompany(id, data) {
   const { vacancies: vacancyPayloads, ...companyData } = data;
 
   return db.transaction(async (tx) => {
+    if (vacancyPayloads) {
+      await lockVacancyCodeGeneration(tx, id);
+    }
+
     const [company] = await tx
       .update(companies)
       .set({ ...companyData, updatedAt: new Date() })
@@ -93,18 +92,11 @@ export async function updateCompany(id, data) {
       }
 
       if (newVacancies.length) {
-        const withCodes = [];
-        const reservedCodes = new Set(existing.map((v) => v.code));
-        for (const v of newVacancies) {
-          const code = await generateVacancyCode(tx, {
-            companyId: id,
-            companyName: company.name,
-            position: v.position,
-            reservedCodes,
-          });
-          reservedCodes.add(code);
-          withCodes.push({ ...v, code, companyId: id });
-        }
+        const withCodes = generateVacancyCodes({
+          companyName: company.name,
+          vacancyPayloads: newVacancies,
+          existingCodes: existing.map((vacancy) => vacancy.code),
+        }).map((vacancy) => ({ ...vacancy, companyId: id }));
         await tx.insert(vacancies).values(withCodes);
       }
     }

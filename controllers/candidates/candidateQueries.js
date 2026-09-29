@@ -207,13 +207,22 @@ export async function findAllCandidates(queryParams = {}) {
       companyName: companies.name,
     })
     .from(candidates)
-    .leftJoin(vacancies, eq(candidates.appliedCategory, vacancies.id))
+    // applied_category is varchar in existing databases while vacancy ids are uuid.
+    // Cast both sides so legacy profession values remain readable and UUID values
+    // still resolve to their vacancy names until the column is migrated.
+    .leftJoin(
+      vacancies,
+      sql`${candidates.appliedCategory}::text = ${vacancies.id}::text`,
+    )
     .leftJoin(companies, eq(candidates.companyId, companies.id));
 
   const countQuery = db
     .select({ count: sql`count(*)::int` })
     .from(candidates)
-    .leftJoin(vacancies, eq(candidates.appliedCategory, vacancies.id))
+    .leftJoin(
+      vacancies,
+      sql`${candidates.appliedCategory}::text = ${vacancies.id}::text`,
+    )
     .leftJoin(companies, eq(candidates.companyId, companies.id));
 
   return paginateAndSearch(
