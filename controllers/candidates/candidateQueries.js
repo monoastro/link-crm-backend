@@ -6,6 +6,7 @@ import { db } from "#/config/db.js";
 import { candidates, companies, vacancies, documents, notifications } from "#/schema/index.js";
 import { join, paginateAndSearch, buildWhereFromQuery } from "#/utils/queryhelper.js";
 import { STATUS_FIELD_RULES, STATUS_COLUMNS } from "./candidateStatusRules.js";
+import { publishToRole } from "../notifications/notificationHub.js";
 
 export async function findCandidateById(id) {
   return db.query.candidates.findFirst({
@@ -239,7 +240,9 @@ export async function findAllCandidates(queryParams = {}) {
 }
 
 export async function updateCandidate(id, data) {
-  return db.transaction(async (tx) => {
+  const created = [];
+
+  const candidate = await db.transaction(async (tx) => {
     const [before] = await tx
       .select({
         name: candidates.name,
@@ -251,7 +254,7 @@ export async function updateCandidate(id, data) {
 
     if (!before) return null;
 
-    const [candidate] = await tx
+    const [updated] = await tx
       .update(candidates)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(candidates.id, id))
@@ -264,18 +267,35 @@ export async function updateCandidate(id, data) {
     for (const field of changedStatusFields) {
       const rule = STATUS_FIELD_RULES[field];
       const from = before[field];
-      const to = candidate[field];
+      const to = updated[field];
 
       for (const role of rule.roles) {
-        await tx.insert(notifications).values({
-          role,
-          type: `candidate.${field}_changed`,
-          title: `${before.name}: ${rule.label} changed from ${from ?? "—"} to ${to ?? "—"}`,
-          data: { candidateName: before.name, candidateId: id, field, from, to },
-        });
+        const [notification] = await tx
+          .insert(notifications)
+          .values({
+            role,
+            type: `candidate.${field}_changed`,
+            title: `${before.name}: ${rule.label} changed from ${from ?? "—"} to ${to ?? "—"}`,
+            data: { candidateName: before.name, candidateId: id, field, from, to },
+          })
+          .returning();
+
+        created.push(notification);
       }
     }
 
-    return candidate;
+    return updated;
   });
+
+  // Transaction has committed, so it's safe to push live.
+  // A failed push must never fail the update itself.
+  for (const n of created) {
+    try {
+      publishToRole(n.role, n);
+    } catch (err) {
+      console.error("Failed to publish notification", n.id, err);
+    }
+  }
+
+  return candidate;
 }

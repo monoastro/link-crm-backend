@@ -40,7 +40,12 @@ app.use(
 );
 
 app.use(helmet());
-app.use(compression());
+
+app.use(compression({
+  filter: (req, res) =>
+    req.originalUrl.includes("/notifications/stream") ? false : compression.filter(req, res),
+}));
+
 app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
