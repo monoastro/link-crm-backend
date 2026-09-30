@@ -182,13 +182,13 @@ function endOfDay(dateStr) {
 export async function findAllCandidates(queryParams = {}) {
   const {
     query, page, pageSize, appliedCountry, appliedCategory, companyId,
-    visaStatus, afterDate, beforeDate,
+    visaStatus, afterDate, beforeDate, isSelected,
   } = queryParams;
 
   const eqWhere = buildWhereFromQuery(
     candidates,
-    { appliedCountry, appliedCategory, companyId, visaStatus },
-    ["appliedCountry", "appliedCategory", "companyId", "visaStatus"]
+    { appliedCountry, appliedCategory, companyId, visaStatus, isSelected },
+    ["appliedCountry", "appliedCategory", "companyId", "visaStatus", "isSelected"]
   );
 
   const dateConditions = [

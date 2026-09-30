@@ -20,6 +20,7 @@ export const candidates = t.pgTable(
     address: t.varchar("address", { length: 255 }),
     dob: t.date("dob"),
     gender: genderEnum("gender"),
+    isSelected: t.boolean("is_selected").default(false),
 
     appliedCategory: t.uuid("applied_category").references(() => vacancies.id, { onDelete: "set null" }),
     passportExpiry: t.date("passport_expiry"),
@@ -31,6 +32,7 @@ export const candidates = t.pgTable(
     tashreehStatus: t.varchar("tashreeh_status", { length: 255 }),
     visaNumber: t.varchar("visa_number", { length: 50 }),
     visaStatus: t.varchar("visa_status", { length: 255 }),
+    visaRemarks: t.text("visa_remarks"),
     qvcStatus: t.varchar("qvc_status", { length: 255 }),
     mofaStatus: t.varchar("mofa_status", { length: 255 }),
     pccStatus: t.varchar("pcc_status", { length: 255 }),

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { candidates } from "#/schema/index.js";
 
 const { createInsertSchema, createUpdateSchema } = createSchemaFactory({
-  coerce: { date: true },
+  coerce: { date: true, boolean: true }, // add boolean: true
 });
 
 const baseCandidateInsertSchema = createInsertSchema(candidates, {
