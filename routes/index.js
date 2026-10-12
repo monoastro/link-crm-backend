@@ -3,6 +3,7 @@ import userRoutes from "./userRoutes.js";
 import candidateRoutes from "./candidateRoutes.js";
 import companyRoutes from "./companyRoutes.js";
 import notificationRoutes from "./notificationRoutes.js";
+import dashboardRoutes from "./dashboardRoutes.js";
 import { Router } from "express";
 
 
@@ -13,6 +14,7 @@ router.use("/users", userRoutes);
 router.use("/candidates", candidateRoutes);
 router.use("/companies", companyRoutes);
 router.use("/notifications", notificationRoutes);
+router.use("/dashboard", dashboardRoutes);
 
 export default router;
 
